@@ -689,7 +689,7 @@ static void encode_numpy_array( JSOBJ obj, JSONObjectEncoder *enc ) {
         case NPY_UINT8: output_func = OutputUInt8; break;
         case NPY_FLOAT32: output_func = OutputFloat32; break;
         case NPY_FLOAT64: output_func = OutputFloat64; break;
-        default: output_func = OutputInt64; break;
+        default: SetError( arr_obj, enc, "Data type can not be serialized!" ); return; break;
     };
     traverse_ndarray( arr_obj, iter, enc, output_func, arr_obj->dimensions, arr_obj->nd, 0 );
 }
