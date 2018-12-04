@@ -602,6 +602,10 @@ ISITERABLE:
 
     return;
   }
+  else if ( strcmp( obj->ob_type->tp_name, "numpy.ndarray" ) == 0 ) {
+      tc->type = JT_NUMPY;
+      return;
+  }
 
   if (UNLIKELY(PyObject_HasAttrString(obj, "toDict")))
   {

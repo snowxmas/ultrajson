@@ -45,6 +45,8 @@ http://www.opensource.apple.com/source/tcl/tcl-14/tcl/license.terms
 
 #include <float.h>
 
+#include <numpy/arrayobject.h>
+
 #ifndef TRUE
 #define TRUE 1
 #endif
@@ -590,6 +592,108 @@ Handle integration functions returning NULL here */
 FIXME:
 Perhaps implement recursion detection */
 
+static void Buffer_AppendChar_Alloc( JSONObjectEncoder *enc, char ch ) {
+    Buffer_Reserve( enc, 1 );
+    Buffer_AppendCharUnchecked( enc, ch );
+}
+
+static int gs_has_initialized = FALSE;
+
+typedef void ( *DataOutputter )( JSOBJ obj, JSONObjectEncoder *enc, void *value );
+
+static void OutputInt64( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendLongUnchecked( enc, *(JSINT64*)value );
+}
+
+static void OutputUInt64( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendUnsignedLongUnchecked( enc, *(JSUINT64*)value );
+}
+
+static void OutputInt32( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendIntUnchecked( enc, *(JSINT32*)value );
+}
+
+static void OutputUInt32( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendUnsignedLongUnchecked( enc, *(JSUINT32*)value );
+}
+
+static void OutputInt16( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendIntUnchecked( enc, *(int16_t*)value );
+}
+
+static void OutputUInt16( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendIntUnchecked( enc, *(uint16_t*)value );
+}
+
+static void OutputInt8( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendIntUnchecked( enc, *(int8_t*)value );
+}
+
+static void OutputUInt8( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendIntUnchecked( enc, *(uint8_t*)value );
+}
+
+static void OutputFloat32( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendDoubleDconv( obj, enc, *(float*)value );
+}
+
+static void OutputFloat64( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendDoubleDconv( obj, enc, *(double*)value );
+}
+
+static void traverse_ndarray( JSOBJ obj, PyArrayIterObject *iter, JSONObjectEncoder *enc, DataOutputter output_func, npy_intp* dims, int nd, int cur_layer ) {
+    if ( cur_layer >= nd ) {
+        output_func( obj, enc, iter->dataptr );
+        PyArray_ITER_NEXT( iter );
+        return;
+    }
+    
+    Buffer_AppendChar_Alloc( enc, '[' );
+    for ( int x = 0; x < dims[cur_layer]; ++x ) {
+        if ( x > 0 ) {
+            Buffer_AppendChar_Alloc( enc, ',' );
+        }
+        
+        traverse_ndarray( obj, iter, enc, output_func, dims, nd, cur_layer + 1 );
+    }
+    Buffer_AppendChar_Alloc( enc, ']' );
+}
+
+static void encode_numpy_array( JSOBJ obj, JSONObjectEncoder *enc ) {
+    if ( !gs_has_initialized ) {
+        _import_array();
+        gs_has_initialized = TRUE;
+    }
+    PyArrayObject *arr_obj = (PyArrayObject*)obj;
+    PyArrayIterObject *iter = (PyArrayIterObject *)PyArray_IterNew( (PyObject*)arr_obj );
+    
+    DataOutputter output_func = NULL;
+    switch ( arr_obj->descr->type_num ) {
+        case NPY_INT64: output_func = OutputInt64; break;
+        case NPY_UINT64: output_func = OutputUInt64; break;
+        case NPY_INT32: output_func = OutputInt32; break;
+        case NPY_UINT32: output_func = OutputUInt32; break;
+        case NPY_INT16: output_func = OutputInt16; break;
+        case NPY_UINT16: output_func = OutputUInt16; break;
+        case NPY_INT8: output_func = OutputInt8; break;
+        case NPY_UINT8: output_func = OutputUInt8; break;
+        case NPY_FLOAT32: output_func = OutputFloat32; break;
+        case NPY_FLOAT64: output_func = OutputFloat64; break;
+        default: output_func = OutputInt64; break;
+    };
+    traverse_ndarray( arr_obj, iter, enc, output_func, arr_obj->dimensions, arr_obj->nd, 0 );
+}
+
 static void encode(JSOBJ obj, JSONObjectEncoder *enc, const char *name, size_t cbName)
 {
   const char *value;
@@ -733,6 +837,12 @@ static void encode(JSOBJ obj, JSONObjectEncoder *enc, const char *name, size_t c
       Buffer_AppendIndentUnchecked (enc, enc->level);
       Buffer_AppendCharUnchecked (enc, '}');
       break;
+    }
+    
+    case JT_NUMPY:
+    {
+        encode_numpy_array( obj, enc );
+        break;
     }
 
     case JT_LONG:
