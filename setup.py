@@ -50,7 +50,7 @@ class build_clib_without_warnings(build_clib):
 
 
 module1 = Extension(
-    'ujson',
+    'ujson_numpy',
      sources = [
          './python/ujson.c',
          './python/objToJSON.c',
@@ -86,7 +86,7 @@ finally:
     
 
 setup(
-    name = 'ujson',
+    name = 'ujson_numpy',
     version = get_version(),
     description = "Ultra fast JSON encoder and decoder for Python",
     long_description = README,
