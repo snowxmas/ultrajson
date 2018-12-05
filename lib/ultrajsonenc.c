@@ -597,8 +597,6 @@ static void Buffer_AppendChar_Alloc( JSONObjectEncoder *enc, char ch ) {
     Buffer_AppendCharUnchecked( enc, ch );
 }
 
-static int gs_has_initialized = FALSE;
-
 typedef void ( *DataOutputter )( JSOBJ obj, JSONObjectEncoder *enc, void *value );
 
 static void OutputInt64( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
@@ -651,11 +649,17 @@ static void OutputFloat64( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
     Buffer_AppendDoubleDconv( obj, enc, *(double*)value );
 }
 
-static void serialize_numpy_array_helper( JSOBJ obj, PyArrayIterObject *iter, JSONObjectEncoder *enc, DataOutputter output_func, npy_intp* dims, int nd, int cur_layer ) {
+static int serialize_numpy_array_helper( PyArrayObject *obj, NpyIter *iter, NpyIter_IterNextFunc iter_next, char **cur_data, JSONObjectEncoder *enc, DataOutputter output_func, npy_intp* dims, int nd, int cur_layer ) {
     if ( cur_layer >= nd ) {
-        output_func( obj, enc, iter->dataptr );
-        PyArray_ITER_NEXT( iter );
-        return;
+        if ( *cur_data == NULL ) {
+            SetError( obj, enc, "Iteration finishes too early!" );
+            return -1;
+        }
+        output_func( obj, enc, *cur_data );
+        if ( !iter_next( iter ) ) {
+            *cur_data = NULL;
+        }
+        return 0;
     }
     
     Buffer_AppendChar_Alloc( enc, '[' );
@@ -664,14 +668,13 @@ static void serialize_numpy_array_helper( JSOBJ obj, PyArrayIterObject *iter, JS
             Buffer_AppendChar_Alloc( enc, ',' );
         }
         
-        serialize_numpy_array_helper( obj, iter, enc, output_func, dims, nd, cur_layer + 1 );
+        int ret = serialize_numpy_array_helper( obj, iter, iter_next, cur_data, enc, output_func, dims, nd, cur_layer + 1 );
+        if ( ret < 0 ) {
+            return ret;
+        }
     }
     Buffer_AppendChar_Alloc( enc, ']' );
-}
-
-static void serialize_numpy_array( PyArrayObject *obj, JSONObjectEncoder *enc, DataOutputter output_func ) {
-    PyArrayIterObject *iter = (PyArrayIterObject *)PyArray_IterNew( (PyObject *)obj );
-    serialize_numpy_array_helper( obj, iter, enc, output_func, PyArray_DIMS( obj ), PyArray_NDIM( obj ), 0 );
+    return 0;
 }
 
 int init_numpy() {
@@ -680,10 +683,6 @@ int init_numpy() {
 }
 
 static void encode_numpy_array( JSOBJ obj, JSONObjectEncoder *enc ) {
-    if ( !gs_has_initialized ) {
-        //_import_array();
-        gs_has_initialized = TRUE;
-    }
     PyArrayObject *arr_obj = (PyArrayObject*)obj;
     DataOutputter output_func = NULL;
     switch ( PyArray_DTYPE( arr_obj )->type_num ) {
@@ -699,7 +698,12 @@ static void encode_numpy_array( JSOBJ obj, JSONObjectEncoder *enc ) {
         case NPY_FLOAT64: output_func = OutputFloat64; break;
         default: SetError( arr_obj, enc, "Data type can not be serialized!" ); return; break;
     };
-    serialize_numpy_array( arr_obj, enc, output_func );
+
+    NpyIter *iter = NpyIter_New( arr_obj, NPY_ITER_READONLY, NPY_KEEPORDER, NPY_NO_CASTING, NULL );
+    char **data = NpyIter_GetDataPtrArray( iter );
+    NpyIter_IterNextFunc *iter_next = NpyIter_GetIterNext( iter, NULL );
+    serialize_numpy_array_helper( arr_obj, iter, iter_next, data, enc, output_func, PyArray_DIMS( arr_obj ), PyArray_NDIM( arr_obj ), 0 );
+    NpyIter_Deallocate( iter );
 }
 
 static void encode(JSOBJ obj, JSONObjectEncoder *enc, const char *name, size_t cbName)
