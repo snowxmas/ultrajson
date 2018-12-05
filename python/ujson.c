@@ -93,6 +93,9 @@ static struct PyModuleDef moduledef = {
 
 PYMODINITFUNC
 {
+  int init_numpy();
+  init_numpy();
+  
   PyObject *module;
   PyObject *version_string;
 

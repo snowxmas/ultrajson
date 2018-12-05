@@ -45,7 +45,7 @@ http://www.opensource.apple.com/source/tcl/tcl-14/tcl/license.terms
 
 #include <float.h>
 
-#include <numpy/arrayobject.h>
+#include <numpy/ndarrayobject.h>
 
 #ifndef TRUE
 #define TRUE 1
@@ -651,7 +651,7 @@ static void OutputFloat64( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
     Buffer_AppendDoubleDconv( obj, enc, *(double*)value );
 }
 
-static void traverse_ndarray( JSOBJ obj, PyArrayIterObject *iter, JSONObjectEncoder *enc, DataOutputter output_func, npy_intp* dims, int nd, int cur_layer ) {
+static void serialize_numpy_array_helper( JSOBJ obj, PyArrayIterObject *iter, JSONObjectEncoder *enc, DataOutputter output_func, npy_intp* dims, int nd, int cur_layer ) {
     if ( cur_layer >= nd ) {
         output_func( obj, enc, iter->dataptr );
         PyArray_ITER_NEXT( iter );
@@ -664,21 +664,29 @@ static void traverse_ndarray( JSOBJ obj, PyArrayIterObject *iter, JSONObjectEnco
             Buffer_AppendChar_Alloc( enc, ',' );
         }
         
-        traverse_ndarray( obj, iter, enc, output_func, dims, nd, cur_layer + 1 );
+        serialize_numpy_array_helper( obj, iter, enc, output_func, dims, nd, cur_layer + 1 );
     }
     Buffer_AppendChar_Alloc( enc, ']' );
 }
 
+static void serialize_numpy_array( PyArrayObject *obj, JSONObjectEncoder *enc, DataOutputter output_func ) {
+    PyArrayIterObject *iter = (PyArrayIterObject *)PyArray_IterNew( (PyObject *)obj );
+    serialize_numpy_array_helper( obj, iter, enc, output_func, PyArray_DIMS( obj ), PyArray_NDIM( obj ), 0 );
+}
+
+int init_numpy() {
+    import_array1( -1 );
+    return 0;
+}
+
 static void encode_numpy_array( JSOBJ obj, JSONObjectEncoder *enc ) {
     if ( !gs_has_initialized ) {
-        _import_array();
+        //_import_array();
         gs_has_initialized = TRUE;
     }
     PyArrayObject *arr_obj = (PyArrayObject*)obj;
-    PyArrayIterObject *iter = (PyArrayIterObject *)PyArray_IterNew( (PyObject*)arr_obj );
-    
     DataOutputter output_func = NULL;
-    switch ( arr_obj->descr->type_num ) {
+    switch ( PyArray_DTYPE( arr_obj )->type_num ) {
         case NPY_INT64: output_func = OutputInt64; break;
         case NPY_UINT64: output_func = OutputUInt64; break;
         case NPY_INT32: output_func = OutputInt32; break;
@@ -691,7 +699,7 @@ static void encode_numpy_array( JSOBJ obj, JSONObjectEncoder *enc ) {
         case NPY_FLOAT64: output_func = OutputFloat64; break;
         default: SetError( arr_obj, enc, "Data type can not be serialized!" ); return; break;
     };
-    traverse_ndarray( arr_obj, iter, enc, output_func, arr_obj->dimensions, arr_obj->nd, 0 );
+    serialize_numpy_array( arr_obj, enc, output_func );
 }
 
 static void encode(JSOBJ obj, JSONObjectEncoder *enc, const char *name, size_t cbName)

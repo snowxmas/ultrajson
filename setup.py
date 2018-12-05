@@ -10,6 +10,7 @@ import os.path
 import re
 import sys
 from glob import glob
+import numpy as np
 
 CLASSIFIERS = filter(None, map(str.strip,
 """
@@ -58,8 +59,8 @@ module1 = Extension(
          './lib/ultrajsonenc.c',
          './lib/ultrajsondec.c'
      ],
-     include_dirs = ['./python', './lib'],
-     extra_compile_args = ['-D_GNU_SOURCE'],
+     include_dirs = ['./python', './lib', os.path.join( os.path.dirname( np.__file__ ), "core", "include" )],
+     extra_compile_args = ['-D_GNU_SOURCE', '-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION'],
      extra_link_args = ['-lstdc++', '-lm']
 )
 
