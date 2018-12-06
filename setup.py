@@ -7,6 +7,7 @@ import shutil
 import os.path
 import re
 import sys
+import numpy as np
 
 CLASSIFIERS = filter(None, map(str.strip,
 """
@@ -27,14 +28,14 @@ try:
 except(OSError):
     pass
 
-module1 = Extension('ujson',
+module1 = Extension('ujson_numpy',
                     sources = ['./python/ujson.c', 
                                './python/objToJSON.c', 
                                './python/JSONtoObj.c', 
                                './lib/ultrajsonenc.c', 
                                './lib/ultrajsondec.c'],
-                    include_dirs = ['./python', './lib'],
-                    extra_compile_args=['-D_GNU_SOURCE'])
+                    include_dirs = ['./python', './lib', os.path.join( os.path.dirname( np.__file__ ), "core", "include" )],
+                    extra_compile_args=['-D_GNU_SOURCE', '-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION'])
 
 def get_version():
     filename = os.path.join(os.path.dirname(__file__), './python/version.h')
@@ -55,7 +56,7 @@ try:
 finally:
     f.close()    
     
-setup (name = 'ujson',
+setup (name = 'ujson_numpy',
        version = get_version(),
        description = "Ultra fast JSON encoder and decoder for Python",
        long_description = README,

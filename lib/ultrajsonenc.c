@@ -45,6 +45,8 @@ http://www.opensource.apple.com/source/tcl/tcl-14/tcl/license.terms
 
 #include <float.h>
 
+#include <numpy/ndarrayobject.h>
+
 #ifndef TRUE
 #define TRUE 1
 #endif
@@ -714,7 +716,121 @@ Handle integration functions returning NULL here */
 FIXME:
 Perhaps implement recursion detection */
 
-void encode(JSOBJ obj, JSONObjectEncoder *enc, const char *name, size_t cbName)
+static void Buffer_AppendChar_Alloc( JSONObjectEncoder *enc, char ch ) {
+    Buffer_Reserve( enc, 1 );
+    Buffer_AppendCharUnchecked( enc, ch );
+}
+
+typedef void ( *DataOutputter )( JSOBJ obj, JSONObjectEncoder *enc, void *value );
+
+static void OutputInt64( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendLongUnchecked( enc, *(JSINT64*)value );
+}
+
+static void OutputUInt64( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendUnsignedLongUnchecked( enc, *(JSUINT64*)value );
+}
+
+static void OutputInt32( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendIntUnchecked( enc, *(JSINT32*)value );
+}
+
+static void OutputUInt32( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendUnsignedLongUnchecked( enc, *(JSUINT32*)value );
+}
+
+static void OutputInt16( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendIntUnchecked( enc, *(int16_t*)value );
+}
+
+static void OutputUInt16( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendIntUnchecked( enc, *(uint16_t*)value );
+}
+
+static void OutputInt8( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendIntUnchecked( enc, *(int8_t*)value );
+}
+
+static void OutputUInt8( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendIntUnchecked( enc, *(uint8_t*)value );
+}
+
+static void OutputFloat32( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendDoubleDconv( obj, enc, *(float*)value );
+}
+
+static void OutputFloat64( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
+    Buffer_Reserve( enc, 32 );
+    Buffer_AppendDoubleDconv( obj, enc, *(double*)value );
+}
+
+static int serialize_numpy_array_helper( PyArrayObject *obj, NpyIter *iter, NpyIter_IterNextFunc iter_next, char **cur_data, JSONObjectEncoder *enc, DataOutputter output_func, npy_intp* dims, int nd, int cur_layer ) {
+    if ( cur_layer >= nd ) {
+        if ( *cur_data == NULL ) {
+            SetError( obj, enc, "Iteration finishes too early!" );
+            return -1;
+        }
+        output_func( obj, enc, *cur_data );
+        if ( !iter_next( iter ) ) {
+            *cur_data = NULL;
+        }
+        return 0;
+    }
+
+    Buffer_AppendChar_Alloc( enc, '[' );
+    for ( int x = 0; x < dims[cur_layer]; ++x ) {
+        if ( x > 0 ) {
+            Buffer_AppendChar_Alloc( enc, ',' );
+        }
+
+        int ret = serialize_numpy_array_helper( obj, iter, iter_next, cur_data, enc, output_func, dims, nd, cur_layer + 1 );
+        if ( ret < 0 ) {
+            return ret;
+        }
+    }
+    Buffer_AppendChar_Alloc( enc, ']' );
+    return 0;
+}
+
+int init_numpy() {
+    import_array1( -1 );
+    return 0;
+}
+
+static void encode_numpy_array( JSOBJ obj, JSONObjectEncoder *enc ) {
+    PyArrayObject *arr_obj = (PyArrayObject*)obj;
+    DataOutputter output_func = NULL;
+    switch ( PyArray_DTYPE( arr_obj )->type_num ) {
+        case NPY_INT64: output_func = OutputInt64; break;
+        case NPY_UINT64: output_func = OutputUInt64; break;
+        case NPY_INT32: output_func = OutputInt32; break;
+        case NPY_UINT32: output_func = OutputUInt32; break;
+        case NPY_INT16: output_func = OutputInt16; break;
+        case NPY_UINT16: output_func = OutputUInt16; break;
+        case NPY_INT8: output_func = OutputInt8; break;
+        case NPY_UINT8: output_func = OutputUInt8; break;
+        case NPY_FLOAT32: output_func = OutputFloat32; break;
+        case NPY_FLOAT64: output_func = OutputFloat64; break;
+        default: SetError( arr_obj, enc, "Data type can not be serialized!" ); return; break;
+    };
+
+    NpyIter *iter = NpyIter_New( arr_obj, NPY_ITER_READONLY, NPY_KEEPORDER, NPY_NO_CASTING, NULL );
+    char **data = NpyIter_GetDataPtrArray( iter );
+    NpyIter_IterNextFunc *iter_next = NpyIter_GetIterNext( iter, NULL );
+    serialize_numpy_array_helper( arr_obj, iter, iter_next, data, enc, output_func, PyArray_DIMS( arr_obj ), PyArray_NDIM( arr_obj ), 0 );
+    NpyIter_Deallocate( iter );
+}
+
+static void encode(JSOBJ obj, JSONObjectEncoder *enc, const char *name, size_t cbName)
 {
   const char *value;
   char *objName;
@@ -844,6 +960,12 @@ void encode(JSOBJ obj, JSONObjectEncoder *enc, const char *name, size_t cbName)
     Buffer_AppendIndentUnchecked (enc, enc->level);
     Buffer_AppendCharUnchecked (enc, '}');
     break;
+  }
+
+  case JT_NUMPY:
+  {
+      encode_numpy_array( obj, enc );
+      break;
   }
 
   case JT_LONG:

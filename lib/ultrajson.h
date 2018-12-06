@@ -158,6 +158,7 @@ enum JSTYPES
   JT_ARRAY,     // Array structure
   JT_OBJECT,    // Key/Value structure
   JT_INVALID,   // Internal, do not return nor expect
+  JT_NUMPY,     // Numpy array
 };
 
 typedef void * JSOBJ;
