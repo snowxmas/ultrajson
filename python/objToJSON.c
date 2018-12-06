@@ -651,10 +651,6 @@ void Object_beginTypeContext (JSOBJ _obj, JSONTypeContext *tc, JSONObjectEncoder
     tc->type = JT_INVALID;
     return;
   }
-  else if ( strcmp( obj->ob_type->tp_name, "numpy.ndarray" ) == 0 ) {
-      tc->type = JT_NUMPY;
-      return;
-  }
 
   obj = (PyObject*) _obj;
 
@@ -825,6 +821,10 @@ ISITERABLE:
     return;
   }
   */
+  else if ( strcmp( obj->ob_type->tp_name, "numpy.ndarray" ) == 0 ) {
+      tc->type = JT_NUMPY;
+      return;
+  }
 
   if (PyObject_HasAttrString(obj, "toDict"))
   {

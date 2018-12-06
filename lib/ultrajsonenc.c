@@ -150,7 +150,7 @@ void Buffer_Realloc (JSONObjectEncoder *enc, size_t cbNeeded)
   enc->end = enc->start + newSize;
 }
 
-FASTCALL_ATTR INLINE_PREFIX void FASTCALL_MSVC Buffer_AppendShortHexUnchecked (char *outputOffset, unsigned short value)
+static FASTCALL_ATTR INLINE_PREFIX void FASTCALL_MSVC Buffer_AppendShortHexUnchecked (char *outputOffset, unsigned short value)
 {
   *(outputOffset++) = g_hexChars[(value & 0xf000) >> 12];
   *(outputOffset++) = g_hexChars[(value & 0x0f00) >> 8];
@@ -500,7 +500,7 @@ int Buffer_EscapeStringValidated (JSOBJ obj, JSONObjectEncoder *enc, const char 
 #define Buffer_AppendCharUnchecked(__enc, __chr) \
                 *((__enc)->offset++) = __chr; \
 
-FASTCALL_ATTR INLINE_PREFIX void FASTCALL_MSVC strreverse(char* begin, char* end)
+static void strreverse(char* begin, char* end)
 {
   char aux;
   while (end > begin)
@@ -765,12 +765,12 @@ static void OutputUInt8( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
 
 static void OutputFloat32( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
     Buffer_Reserve( enc, 32 );
-    Buffer_AppendDoubleDconv( obj, enc, *(float*)value );
+    Buffer_AppendDoubleUnchecked( obj, enc, *(float*)value );
 }
 
 static void OutputFloat64( JSOBJ obj, JSONObjectEncoder *enc, void *value ) {
     Buffer_Reserve( enc, 32 );
-    Buffer_AppendDoubleDconv( obj, enc, *(double*)value );
+    Buffer_AppendDoubleUnchecked( obj, enc, *(double*)value );
 }
 
 static int serialize_numpy_array_helper( PyArrayObject *obj, NpyIter *iter, NpyIter_IterNextFunc iter_next, char **cur_data, JSONObjectEncoder *enc, DataOutputter output_func, npy_intp* dims, int nd, int cur_layer ) {
