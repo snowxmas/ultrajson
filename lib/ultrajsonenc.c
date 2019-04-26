@@ -806,8 +806,26 @@ int init_numpy() {
     return 0;
 }
 
+static int is_ndarr_empty( PyArrayObject *arr_obj ) {
+    int dims = PyArray_NDIM( arr_obj );
+    npy_intp *p_first_dim = PyArray_DIMS( arr_obj );
+    for ( npy_intp *p_cur_dim = p_first_dim; p_cur_dim - p_first_dim < dims; ++p_cur_dim ) {
+        if ( *p_cur_dim == 0 ) {
+            return 1;
+        }
+    }
+    
+    return 0;
+}
+
 static void encode_numpy_array( JSOBJ obj, JSONObjectEncoder *enc ) {
     PyArrayObject *arr_obj = (PyArrayObject*)obj;
+    if ( is_ndarr_empty( arr_obj ) ) {
+        Buffer_AppendChar_Alloc( enc, '[' );
+        Buffer_AppendChar_Alloc( enc, ']' );
+        return;
+    }
+    
     DataOutputter output_func = NULL;
     switch ( PyArray_DTYPE( arr_obj )->type_num ) {
         case NPY_INT64: output_func = OutputInt64; break;
